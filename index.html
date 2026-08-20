@@ -98,6 +98,7 @@
 <header>
   <h1>💵 Maaş Takip</h1>
   <span class="sub">Mesai · Avans · Prim · Resmi/Elden</span>
+  <span class="sub no-print" id="surumEt" style="opacity:.7;margin-left:6px"></span>
   <div class="spacer"></div>
   <span id="bulutDurum" class="sub no-print" style="font-weight:600"></span>
   <button class="btn gray sm no-print" onclick="disaAktar()">⬇ Yedek</button>
@@ -201,7 +202,7 @@
 
 <script>
 /* ================= Sürüm / Güncelleme ================= */
-const APP_SURUM="2026-08-20.1";   // her yayında bunu ve version.json'u birlikte artır
+const APP_SURUM="2026-08-20.2";   // her yayında bunu ve version.json'u birlikte artır
 function uygulamayiGuncelle(){ location.replace(location.pathname+'?v='+Date.now()); } // önbelleği atlayıp en yeni sürümü çeker
 async function guncellemeKontrol(){
   try{ const r=await fetch('version.json?t='+Date.now(),{cache:'no-store'}); if(!r.ok)return;
@@ -943,6 +944,7 @@ async function girisSonrasi(){
   setInterval(()=>{ if(!yaziyorMu()&&!batchDoluMu()) bulutYukle(true); }, 20000); }
 
 async function baslat(){ yukle();
+  try{ document.getElementById('surumEt').textContent='v'+APP_SURUM; }catch(e){}
   guncellemeKontrol(); setInterval(guncellemeKontrol, 15*60*1000); window.addEventListener('focus',guncellemeKontrol); // sürüm kontrolü
   if(!window.supabase){ document.getElementById('appWrap').style.display=''; git('ozet'); durumGoster(); return; }
   sbInit();
