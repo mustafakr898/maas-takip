@@ -208,7 +208,7 @@
 
 <script>
 /* ================= Sürüm / Güncelleme ================= */
-const APP_SURUM="2026-09-11.3";   // her yayında bunu ve version.json'u birlikte artır
+const APP_SURUM="2026-09-11.4";   // her yayında bunu ve version.json'u birlikte artır
 function uygulamayiGuncelle(){ location.replace(location.pathname+'?v='+Date.now()); } // önbelleği atlayıp en yeni sürümü çeker
 async function guncellemeKontrol(){
   try{ const r=await fetch('version.json?t='+Date.now(),{cache:'no-store'}); if(!r.ok)return;
@@ -1017,16 +1017,18 @@ async function renderKullanicilar(){
   '</div>';
 }
 async function kullaniciOlustur(){
-  const kadi=(document.getElementById('ku_kadi').value||'').trim().toLowerCase();
+  const kadi=(document.getElementById('ku_kadi').value||'').trim();
   const sifre=document.getElementById('ku_sifre').value||'';
   const duz=document.getElementById('ku_duz').checked, sil=document.getElementById('ku_sil').checked;
   const m=document.getElementById('ku_mesaj'); m.style.color='var(--text)';
-  if(!/^[a-z0-9_.]{3,}$/.test(kadi)){ m.style.color='var(--red)'; m.textContent='Kullanıcı adı en az 3 karakter olmalı (harf/rakam/nokta/alt çizgi).'; return; }
+  if(kadi.length<3||kadi.indexOf('@')>=0){ m.style.color='var(--red)'; m.textContent='Kullanıcı adı en az 3 karakter olmalı (@ kullanma).'; return; }
   if(sifre.length<6){ m.style.color='var(--red)'; m.textContent='Şifre en az 6 karakter olmalı.'; return; }
   m.textContent='Oluşturuluyor…';
   try{
     const tmp=window.supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:false,autoRefreshToken:false}});
-    const email=kadi+'@maastakip.com';
+    const _tr={'ş':'s','Ş':'s','ı':'i','İ':'i','ğ':'g','Ğ':'g','ü':'u','Ü':'u','ö':'o','Ö':'o','ç':'c','Ç':'c'};
+    let _slug=kadi.replace(/[şŞıİğĞüÜöÖçÇ]/g,function(c){return _tr[c];}).toLowerCase().replace(/[^a-z0-9.]/g,''); if(_slug.length<2)_slug='user';
+    const email=_slug+'.'+Math.random().toString(36).slice(2,6)+'@maastakip.com';
     const {data,error}=await tmp.auth.signUp({email,password:sifre,options:{data:{kullanici_adi:kadi}}});
     if(error)throw error;
     const uid=data.user&&data.user.id; if(!uid)throw new Error('Kullanıcı kimliği alınamadı.');
