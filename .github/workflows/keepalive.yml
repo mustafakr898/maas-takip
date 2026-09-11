@@ -1,10 +1,11 @@
 name: Supabase Keepalive
-# Supabase ücretsiz projeleri ~7 gün hareketsiz kalınca durur.
-# Bu görev her gün projelere küçük bir istek atıp onları AKTİF tutar.
+# Ücretsiz Supabase projeleri ~7 gün hareketsiz kalınca durur.
+# Bu görev GÜNDE 2 KEZ projelere istek atıp onları AKTİF tutar (1-2 hafta kullanmasan da uyumaz).
 on:
   schedule:
-    - cron: '31 5 * * *'   # her gün 05:31 UTC
-  workflow_dispatch:        # elle de tetiklenebilir
+    - cron: '31 5 * * *'    # 05:31 UTC
+    - cron: '31 17 * * *'   # 17:31 UTC
+  workflow_dispatch:
 
 jobs:
   ping:
@@ -12,8 +13,14 @@ jobs:
     steps:
       - name: Projeleri dürt (keepalive)
         run: |
-          K1='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11aGNvam93b29md3lhc2FnYmJuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYzNTY1NTAsImV4cCI6MjEwMTkzMjU1MH0.jacLcrhHAfT1uUwcdsNT8efuS_iKl-zLw5vAQxE3tD4'
-          K2='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhtdnV3eXN1d2R4dWVsdWhkbmNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcyMTkyMDYsImV4cCI6MjEwMjc5NTIwNn0.Jarg2anyWOjit0WApW1l2jRng6IKmetX4XhvzvSOUU0'
-          echo "Kisisel:" ; curl -s -o /dev/null -w "  HTTP %{http_code}\n" "https://muhcojowoofwyasagbbn.supabase.co/rest/v1/elemanlar?select=id&limit=1" -H "apikey: $K1" -H "Authorization: Bearer $K1" || true
-          echo "Urun:"    ; curl -s -o /dev/null -w "  HTTP %{http_code}\n" "https://xmvuwysuwdxueluhdncn.supabase.co/rest/v1/elemanlar?select=id&limit=1" -H "apikey: $K2" -H "Authorization: Bearer $K2" || true
+          K_MAAS='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11aGNvam93b29md3lhc2FnYmJuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYzNTY1NTAsImV4cCI6MjEwMTkzMjU1MH0.jacLcrhHAfT1uUwcdsNT8efuS_iKl-zLw5vAQxE3tD4'
+          K_URUN='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhtdnV3eXN1d2R4dWVsdWhkbmNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcyMTkyMDYsImV4cCI6MjEwMjc5NTIwNn0.Jarg2anyWOjit0WApW1l2jRng6IKmetX4XhvzvSOUU0'
+          durt() {
+            ref="$1"; key="$2"
+            echo "== $ref =="
+            curl -s -o /dev/null -w "  rest HTTP %{http_code}\n" "https://$ref.supabase.co/rest/v1/elemanlar?select=id&limit=1" -H "apikey: $key" -H "Authorization: Bearer $key" || true
+            curl -s -o /dev/null -w "  auth HTTP %{http_code}\n" "https://$ref.supabase.co/auth/v1/settings" -H "apikey: $key" || true
+          }
+          durt muhcojowoofwyasagbbn "$K_MAAS"   # maaş takip (kişisel)
+          durt xmvuwysuwdxueluhdncn "$K_URUN"   # ürün
           echo "keepalive tamamlandi"
