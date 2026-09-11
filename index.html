@@ -202,7 +202,7 @@
 
 <script>
 /* ================= Sürüm / Güncelleme ================= */
-const APP_SURUM="2026-08-20.2";   // her yayında bunu ve version.json'u birlikte artır
+const APP_SURUM="2026-09-11.1";   // her yayında bunu ve version.json'u birlikte artır
 function uygulamayiGuncelle(){ location.replace(location.pathname+'?v='+Date.now()); } // önbelleği atlayıp en yeni sürümü çeker
 async function guncellemeKontrol(){
   try{ const r=await fetch('version.json?t='+Date.now(),{cache:'no-store'}); if(!r.ok)return;
@@ -951,10 +951,22 @@ async function baslat(){ yukle();
   try{ sb.auth.onAuthStateChange((ev,session)=>{ if(ev==='SIGNED_OUT'){ location.reload(); } else if(session){ oturum=session; } }); }catch(e){}
   window.addEventListener('online',()=>{cevrimici=true;durumGoster();bulutYukle();});
   window.addEventListener('offline',()=>{cevrimici=false;durumGoster();});
-  try{ const {data:{session}}=await sb.auth.getSession();
+  try{
+    // Bulut yanıt vermezse (duraklatılmış/yavaş) 8 sn'de vazgeç — uygulama takılmasın
+    const session = await Promise.race([
+      sb.auth.getSession().then(r=>r.data.session),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('zaman aşımı')),8000))
+    ]);
     if(session){ oturum=session; await girisSonrasi(); }
     else { document.getElementById('girisEkrani').style.display=''; document.getElementById('appWrap').style.display='none'; }
-  }catch(e){ document.getElementById('girisEkrani').style.display=''; } }
+  }catch(e){
+    // Buluta ulaşılamadı: önbellekte veri varsa ÇEVRİMDIŞI aç (takılma yok), yoksa giriş ekranı
+    if(TABLOLAR.some(t=>(DB[t]||[]).length)){
+      cevrimici=false; document.getElementById('appWrap').style.display=''; document.getElementById('girisEkrani').style.display='none';
+      try{git('ozet');}catch(_){}
+      var el=document.getElementById('bulutDurum'); if(el){el.textContent='⚠️ bulut erişilemiyor — çevrimdışı';el.style.color='#fecaca';}
+    } else { document.getElementById('girisEkrani').style.display=''; document.getElementById('appWrap').style.display='none'; }
+  } }
 
 /* ================= Başlat ================= */
 baslat();
