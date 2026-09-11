@@ -65,6 +65,8 @@
   .iconbtn:hover{border-color:var(--accent)}
   .addbar{background:var(--panel2);border:1px dashed var(--line);border-radius:10px;padding:12px;margin-bottom:12px}
   body.saltokur .addbar,body.saltokur .iconbtn,body.saltokur .yazBtn{display:none!important}
+  body.nosil .silBtn{display:none!important}
+  body:not(.rol-admin) .adminTab{display:none!important}
   .brow{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px}
   .brow input[type=date]{width:150px}
   .brow input[type=number]{width:130px;text-align:right}
@@ -155,6 +157,7 @@
   <button data-tab="prim" onclick="git('prim')">🎁 Prim</button>
   <button data-tab="aylik" onclick="git('aylik')">🧾 Aylık/Ödeme</button>
   <button data-tab="bordro" onclick="git('bordro')">📄 Bordro</button>
+  <button data-tab="kullanicilar" class="adminTab" onclick="git('kullanicilar')">👤 Kullanıcılar</button>
 </nav>
 
 <main id="app"></main>
@@ -205,7 +208,7 @@
 
 <script>
 /* ================= Sürüm / Güncelleme ================= */
-const APP_SURUM="2026-09-11.2";   // her yayında bunu ve version.json'u birlikte artır
+const APP_SURUM="2026-09-11.3";   // her yayında bunu ve version.json'u birlikte artır
 function uygulamayiGuncelle(){ location.replace(location.pathname+'?v='+Date.now()); } // önbelleği atlayıp en yeni sürümü çeker
 async function guncellemeKontrol(){
   try{ const r=await fetch('version.json?t='+Date.now(),{cache:'no-store'}); if(!r.ok)return;
@@ -329,7 +332,7 @@ function hesapla(eleman,donem,depth){
 function git(tab){
   memoTemizle();
   document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab));
-  ({ozet:renderOzet,yillik:renderYillik,elemanlar:renderElemanlar,mesai:renderMesai,avans:renderAvans,prim:renderPrim,aylik:renderAylik,bordro:renderBordro}[tab])();
+  ({ozet:renderOzet,yillik:renderYillik,elemanlar:renderElemanlar,mesai:renderMesai,avans:renderAvans,prim:renderPrim,aylik:renderAylik,bordro:renderBordro,kullanicilar:renderKullanicilar}[tab])();
   window.scrollTo(0,0);
 }
 function aktifTab(){ const b=document.querySelector("#nav button.active"); return b?b.dataset.tab:'ozet'; }
@@ -459,7 +462,7 @@ function renderElemanlar(){
     <td class="num muted">${TL(gc.maas/120)}/s</td><td class="num muted">${TL(gc.yolTaban/240)}/s</td>
     <td class="actions no-print"><button class="iconbtn" title="Maaş Geçmişi / Zam" onclick="gecmisAc('${e.id}')">📅</button>
       <button class="iconbtn" title="Düzenle" onclick="elemanDuzenle('${e.id}')">✏️</button>
-      <button class="iconbtn" title="Sil" onclick="elemanSil('${e.id}')">🗑️</button></td></tr>`;}).join("");
+      <button class="iconbtn silBtn" title="Sil" onclick="elemanSil('${e.id}')">🗑️</button></td></tr>`;}).join("");
   document.getElementById("app").innerHTML=`<div class="card">
     <div class="toolbar"><h2 style="margin:0">👥 Elemanlar</h2><div class="spacer"></div>
       <button class="btn yazBtn" onclick="elemanYeni()">＋ Yeni Eleman</button></div>
@@ -479,7 +482,7 @@ function elemanKaydet(ev){ if(!yazabilirMi())return; const o={ad:e_ad.value.trim
     acilisDevir:Number(e_devir.value)||0, acilisDonem:(e_devir_ay.value||(Number(e_devir.value)?bugununDonemi():""))};
   if(e_id.value){Object.assign(elemanBul(e_id.value),o);} else{o.id=uid();DB.elemanlar.push(o);}
   kaydet();renderElemanlar(); }
-function elemanSil(id){ if(!yazabilirMi())return; const e=elemanBul(id);if(!e)return;
+function elemanSil(id){ if(!silebilirMi())return; const e=elemanBul(id);if(!e)return;
   if(!confirm(`"${e.ad}" silinsin mi? Bu kişiye ait tüm mesai/avans/prim/aylık kayıtları da silinir.`))return;
   DB.elemanlar=DB.elemanlar.filter(x=>x.id!==id);
   ["mesailer","avanslar","primler"].forEach(t=>DB[t]=DB[t].filter(x=>x.elemanId!==id));
@@ -528,7 +531,7 @@ function gecmisKaydet(){ if(!yazabilirMi())return; const e=elemanBul(gecmisElema
 /* ============ Ortak: defter satır güncelle/sil ============ */
 function ldGuncelle(tablo,id,alan,deger){ const x=DB[tablo].find(r=>r.id===id); if(!x)return;
   x[alan]=(alan==="aciklama"||alan==="tarih"||alan==="tur")?deger:(deger===""?0:Number(deger)); kaydet(); }
-function ldSil(tablo,id,cb){ if(!yazabilirMi())return; if(!confirm("Bu kayıt silinsin mi?"))return; DB[tablo]=DB[tablo].filter(r=>r.id!==id); kaydet(); cb(); }
+function ldSil(tablo,id,cb){ if(!silebilirMi())return; if(!confirm("Bu kayıt silinsin mi?"))return; DB[tablo]=DB[tablo].filter(r=>r.id!==id); kaydet(); cb(); }
 function kisiFiltreBar(){ return `<label style="margin:0">Kişi</label><select style="width:170px" onchange="filtreKisi=this.value;git(aktifTab())">${kisiSecenek(filtreKisi,'— tümü —')}</select>`; }
 
 /* ---- Toplu giriş (batch) ---- */
@@ -615,7 +618,7 @@ function renderMesai(){
       <td class="num">${say(x.mesaiDk||0)}</td>
       <td class="num">${say(x.yolDk||0)}</td>
       <td class="wrap">${esc(x.aciklama||'')}</td>
-      <td class="actions"><button class="iconbtn" title="Düzenle" onclick="ldDuzenleAc('mesailer','${x.id}',renderMesai)">✏️</button><button class="iconbtn" title="Sil" onclick="ldSil('mesailer','${x.id}',renderMesai)">🗑️</button></td>
+      <td class="actions"><button class="iconbtn" title="Düzenle" onclick="ldDuzenleAc('mesailer','${x.id}',renderMesai)">✏️</button><button class="iconbtn silBtn" title="Sil" onclick="ldSil('mesailer','${x.id}',renderMesai)">🗑️</button></td>
     </tr>`;}).join("");
   document.getElementById("app").innerHTML=`
   <div class="card">
@@ -662,7 +665,7 @@ function renderAvans(){
       <td style="text-align:center">${x.tur==='resmi'?'<span class="pill resmi">Resmi</span>':'<span class="pill elden">Elden</span>'}</td>
       <td class="num" style="color:var(--purple)">${net}</td>
       <td class="wrap">${esc(x.aciklama||'')}</td>
-      <td class="actions"><button class="iconbtn" title="Düzenle" onclick="ldDuzenleAc('avanslar','${x.id}',renderAvans)">✏️</button><button class="iconbtn" title="Sil" onclick="ldSil('avanslar','${x.id}',renderAvans)">🗑️</button></td>
+      <td class="actions"><button class="iconbtn" title="Düzenle" onclick="ldDuzenleAc('avanslar','${x.id}',renderAvans)">✏️</button><button class="iconbtn silBtn" title="Sil" onclick="ldSil('avanslar','${x.id}',renderAvans)">🗑️</button></td>
     </tr>`;}).join("");
   document.getElementById("app").innerHTML=`
   <div class="card">
@@ -703,7 +706,7 @@ function renderPrim(){
       <td class="l">${ad}</td>
       <td class="num">${TL(x.tutar||0)}</td>
       <td class="wrap">${esc(x.aciklama||'')}</td>
-      <td class="actions"><button class="iconbtn" title="Düzenle" onclick="ldDuzenleAc('primler','${x.id}',renderPrim)">✏️</button><button class="iconbtn" title="Sil" onclick="ldSil('primler','${x.id}',renderPrim)">🗑️</button></td>
+      <td class="actions"><button class="iconbtn" title="Düzenle" onclick="ldDuzenleAc('primler','${x.id}',renderPrim)">✏️</button><button class="iconbtn silBtn" title="Sil" onclick="ldSil('primler','${x.id}',renderPrim)">🗑️</button></td>
     </tr>`;}).join("");
   document.getElementById("app").innerHTML=`
   <div class="card">
@@ -858,8 +861,9 @@ const MAP={elemanlar:[toEleman,frEleman],mesailer:[toMesai,frMesai],avanslar:[to
 const TABLOLAR=['elemanlar','mesailer','avanslar','primler','aylik'];
 
 function sbInit(){ try{ sb=window.supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:true,autoRefreshToken:true}});}catch(e){console.warn('sb init',e);} }
-let saltOkur=false;
-function yazabilirMi(){ if(saltOkur){ alert('👁️ Salt izleme yetkisi — değişiklik yapamazsın.'); return false; } return true; }
+let saltOkur=false, izinDuzenle=true, izinSil=true, benAdmin=false, benimProfil=null;
+function yazabilirMi(){ if(!izinDuzenle){ alert('👁️ Salt izleme yetkisi — değişiklik yapamazsın.'); return false; } return true; }
+function silebilirMi(){ if(!izinSil){ alert('🗑️ Silme yetkin yok.'); return false; } return true; }
 function durumGoster(){ const el=document.getElementById('bulutDurum'); if(!el)return;
   if(!sb){el.textContent='⚠️ bulut yok';el.style.color='#fecaca';el.title='';return;}
   if(!oturum){el.textContent='';el.title='';return;}
@@ -948,7 +952,20 @@ async function ilkGoc(){
     if(!bulutVar && yerelDoluMu()){ await bulutGonder(); }                                   // yereli buluta taşı (base kurulur)
     else if(bulutVar && yerelDoluMu()){ localStorage.setItem('maas_ilk_yerel_yedek',JSON.stringify(DB)); } // güvenlik yedeği; bulut benimsenecek
   }catch(e){} }
-async function rolBelirle(){ saltOkur=false; try{ const {data}=await sb.from('profiller').select('rol').eq('id',oturum.user.id).single(); if(data && data.rol==='izleyici') saltOkur=true; }catch(e){} try{document.body.classList.toggle('saltokur',saltOkur);}catch(e){} }
+async function rolBelirle(){
+  izinDuzenle=true; izinSil=true; benAdmin=false; benimProfil=null;
+  try{ const {data}=await sb.from('profiller').select('*').eq('id',oturum.user.id).maybeSingle();
+    if(data){ benimProfil=data;
+      if(data.rol==='admin'){ benAdmin=true; izinDuzenle=true; izinSil=true; }
+      else if(data.rol==='izleyici'){ izinDuzenle=false; izinSil=false; }
+      else { izinDuzenle=(data.yetki_duzenle!==false); izinSil=(data.yetki_sil!==false); }
+    } else { benAdmin=true; /* profili yok: tek sahip (bootstrap) */ }
+  }catch(e){}
+  saltOkur=!izinDuzenle;
+  try{ document.body.classList.toggle('saltokur', !izinDuzenle);
+       document.body.classList.toggle('nosil', izinDuzenle && !izinSil);
+       document.body.classList.toggle('rol-admin', benAdmin); }catch(e){}
+}
 async function girisSonrasi(){ await rolBelirle();
   document.getElementById('girisEkrani').style.display='none';
   document.getElementById('appWrap').style.display='';
@@ -958,6 +975,76 @@ async function girisSonrasi(){ await rolBelirle();
   await ilkGoc(); await bulutYukle(); if(!aktifTab())git('ozet'); durumGoster();
   setInterval(()=>{ if(!yaziyorMu()&&!batchDoluMu()) bulutYukle(true); }, 20000); }
 
+/* ================= KULLANICILAR (yönetici) ================= */
+async function kullanicilariYukle(){
+  try{ const {data,error}=await sb.from('profiller').select('*').order('rol',{ascending:true}); if(error)throw error; return data||[]; }
+  catch(e){ console.warn('kullanicilariYukle',e); return null; }
+}
+async function renderKullanicilar(){
+  const app=document.getElementById('app');
+  if(!benAdmin){ app.innerHTML='<div class="card">Bu bölüm yalnızca yönetici içindir.</div>'; return; }
+  app.innerHTML='<div class="card">Yükleniyor…</div>';
+  const list=await kullanicilariYukle();
+  if(list===null){ app.innerHTML='<div class="card" style="color:var(--red)">Kullanıcılar okunamadı. Supabase SQL kurulumunu çalıştırdın mı?</div>'; return; }
+  const rows=list.map(function(pr){
+    const adm=pr.rol==='admin';
+    const ka=esc(pr.kullanici_adi||pr.email||'—');
+    const durum=pr.pasif?'<span style="color:var(--red)">Pasif</span>':'<span style="color:#16a34a;font-weight:600">Aktif</span>';
+    if(adm) return '<tr><td><b>'+ka+'</b></td><td>Yönetici</td><td style="color:var(--muted,#888)">tüm yetkiler</td><td>'+durum+'</td><td class="actions">—</td></tr>';
+    return '<tr><td>'+ka+'</td><td>Kullanıcı</td>'+
+      '<td><label style="margin-right:12px"><input type="checkbox" '+(pr.yetki_duzenle!==false?'checked':'')+' onchange="yetkiGuncelle(\''+pr.id+'\',\'yetki_duzenle\',this.checked)"> Düzenle</label>'+
+          '<label><input type="checkbox" '+(pr.yetki_sil!==false?'checked':'')+' onchange="yetkiGuncelle(\''+pr.id+'\',\'yetki_sil\',this.checked)"> Sil</label></td>'+
+      '<td>'+durum+'</td>'+
+      '<td class="actions"><button class="iconbtn" title="'+(pr.pasif?'Aktifleştir':'Pasifleştir')+'" onclick="pasifDegistir(\''+pr.id+'\','+(pr.pasif?1:0)+')">'+(pr.pasif?'▶️':'⏸️')+'</button></td></tr>';
+  }).join('');
+  app.innerHTML=
+  '<div class="card">'+
+    '<h2 style="margin:0 0 12px">👤 Kullanıcılar</h2>'+
+    '<div class="addbar">'+
+      '<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">'+
+        '<div><label>Kullanıcı adı</label><input id="ku_kadi" placeholder="ör. ahmet" style="width:160px"></div>'+
+        '<div><label>Şifre (en az 6)</label><input id="ku_sifre" type="text" placeholder="şifre" style="width:150px"></div>'+
+        '<label style="display:flex;align-items:center;gap:6px;font-weight:600"><input type="checkbox" id="ku_duz" checked style="width:16px;height:16px"> Düzenleyebilir</label>'+
+        '<label style="display:flex;align-items:center;gap:6px;font-weight:600"><input type="checkbox" id="ku_sil" checked style="width:16px;height:16px"> Silebilir</label>'+
+        '<button class="btn" onclick="kullaniciOlustur()">＋ Oluştur</button>'+
+      '</div>'+
+      '<div id="ku_mesaj" style="font-size:13px;margin-top:8px;min-height:18px"></div>'+
+      '<div class="hint" style="margin-top:2px">İki kutu da boşsa kullanıcı <b>sadece görüntüler</b> (değişiklik yapamaz).</div>'+
+    '</div>'+
+    '<div class="scroll"><table><thead><tr><th>Kullanıcı</th><th>Rol</th><th>Yetkiler</th><th>Durum</th><th></th></tr></thead>'+
+    '<tbody>'+(rows||'<tr><td colspan="5">Kayıt yok.</td></tr>')+'</tbody></table></div>'+
+    '<div style="margin-top:14px"><button class="btn gray" onclick="sifreAc()">🔑 Kendi şifremi değiştir</button></div>'+
+  '</div>';
+}
+async function kullaniciOlustur(){
+  const kadi=(document.getElementById('ku_kadi').value||'').trim().toLowerCase();
+  const sifre=document.getElementById('ku_sifre').value||'';
+  const duz=document.getElementById('ku_duz').checked, sil=document.getElementById('ku_sil').checked;
+  const m=document.getElementById('ku_mesaj'); m.style.color='var(--text)';
+  if(!/^[a-z0-9_.]{3,}$/.test(kadi)){ m.style.color='var(--red)'; m.textContent='Kullanıcı adı en az 3 karakter olmalı (harf/rakam/nokta/alt çizgi).'; return; }
+  if(sifre.length<6){ m.style.color='var(--red)'; m.textContent='Şifre en az 6 karakter olmalı.'; return; }
+  m.textContent='Oluşturuluyor…';
+  try{
+    const tmp=window.supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:false,autoRefreshToken:false}});
+    const email=kadi+'@maastakip.com';
+    const {data,error}=await tmp.auth.signUp({email,password:sifre,options:{data:{kullanici_adi:kadi}}});
+    if(error)throw error;
+    const uid=data.user&&data.user.id; if(!uid)throw new Error('Kullanıcı kimliği alınamadı.');
+    const {error:e2}=await sb.from('profiller').upsert({id:uid,kullanici_adi:kadi,email:email,rol:'kullanici',yetki_duzenle:duz,yetki_sil:sil,pasif:false});
+    if(e2)throw e2;
+    m.style.color='#16a34a'; m.textContent='✓ Oluşturuldu: '+kadi;
+    document.getElementById('ku_kadi').value=''; document.getElementById('ku_sifre').value='';
+    setTimeout(renderKullanicilar,700);
+  }catch(e){ m.style.color='var(--red)'; const msg=(e.message||e)+''; m.textContent='Hata: '+(msg.indexOf('already')>=0?'bu kullanıcı adı zaten var.':msg); }
+}
+async function yetkiGuncelle(id,alan,deger){
+  try{ const o={}; o[alan]=deger; const {error}=await sb.from('profiller').update(o).eq('id',id); if(error)throw error; }
+  catch(e){ alert('Yetki güncellenemedi: '+(e.message||e)); renderKullanicilar(); }
+}
+async function pasifDegistir(id,suAnPasif){
+  try{ const {error}=await sb.from('profiller').update({pasif: !suAnPasif}).eq('id',id); if(error)throw error; renderKullanicilar(); }
+  catch(e){ alert('Güncellenemedi: '+(e.message||e)); }
+}
 async function baslat(){ yukle();
   try{ document.getElementById('surumEt').textContent='v'+APP_SURUM; }catch(e){}
   guncellemeKontrol(); setInterval(guncellemeKontrol, 15*60*1000); window.addEventListener('focus',guncellemeKontrol); // sürüm kontrolü
