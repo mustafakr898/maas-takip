@@ -158,6 +158,7 @@
   <button data-tab="aylik" onclick="git('aylik')">🧾 Aylık/Ödeme</button>
   <button data-tab="bordro" onclick="git('bordro')">📄 Bordro</button>
   <button data-tab="kullanicilar" class="adminTab" onclick="git('kullanicilar')">👤 Kullanıcılar</button>
+  <button data-tab="silinenler" class="adminTab" onclick="git('silinenler')">🗑️ Silinenler</button>
 </nav>
 
 <main id="app"></main>
@@ -208,7 +209,7 @@
 
 <script>
 /* ================= Sürüm / Güncelleme ================= */
-const APP_SURUM="2026-09-18.2";   // her yayında bunu ve version.json'u birlikte artır
+const APP_SURUM="2026-09-18.3";   // her yayında bunu ve version.json'u birlikte artır
 function uygulamayiGuncelle(){ location.replace(location.pathname+'?v='+Date.now()); } // önbelleği atlayıp en yeni sürümü çeker
 async function guncellemeKontrol(){
   try{ const r=await fetch('version.json?t='+Date.now(),{cache:'no-store'}); if(!r.ok)return;
@@ -332,7 +333,7 @@ function hesapla(eleman,donem,depth){
 function git(tab){
   memoTemizle();
   document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab));
-  ({ozet:renderOzet,yillik:renderYillik,elemanlar:renderElemanlar,mesai:renderMesai,avans:renderAvans,prim:renderPrim,aylik:renderAylik,bordro:renderBordro,kullanicilar:renderKullanicilar}[tab])();
+  ({ozet:renderOzet,yillik:renderYillik,elemanlar:renderElemanlar,mesai:renderMesai,avans:renderAvans,prim:renderPrim,aylik:renderAylik,bordro:renderBordro,kullanicilar:renderKullanicilar,silinenler:renderSilinenler}[tab])();
   window.scrollTo(0,0);
 }
 function aktifTab(){ const b=document.querySelector("#nav button.active"); return b?b.dataset.tab:'ozet'; }
@@ -884,8 +885,13 @@ function degisenleriHesapla(){
   const base=baseYukle(), upserts={}, tombs={}, gorulen={}; let sayi=0;
   for(const t of TABLOLAR){ for(const r of (DB[t]||[])){ const key=t+':'+r.id, row=MAP[t][0](r), js=JSON.stringify(row);
     gorulen[key]=1; if(base[key]!==js){ (upserts[t]=upserts[t]||[]).push(row); sayi++; } } }
-  for(const key in base){ if(!gorulen[key]){ const p=key.indexOf(':'), t=key.slice(0,p), id=key.slice(p+1);
-    if(TABLOLAR.indexOf(t)>=0){ (tombs[t]=tombs[t]||[]).push({id,silindi:true}); sayi++; } } }
+  // GÜVENLİK: yerel TAMAMEN boşken (ama base doluyken) toplu "hepsini sil" ÜRETME — bozuk durum korunur
+  const dbBos=TABLOLAR.every(function(t){return !(DB[t]||[]).length;});
+  const baseDolu=Object.keys(base).length>0;
+  if(!(dbBos&&baseDolu)){
+    for(const key in base){ if(!gorulen[key]){ const p=key.indexOf(':'), t=key.slice(0,p), id=key.slice(p+1);
+      if(TABLOLAR.indexOf(t)>=0){ (tombs[t]=tombs[t]||[]).push({id,silindi:true}); sayi++; } } }
+  }
   return {upserts,tombs,sayi};
 }
 // Sadece DEĞİŞEN satırları gönderir; silinenleri tombstone (silindi=true) olarak işaretler
@@ -929,9 +935,11 @@ async function bulutYukle(sessiz,etkilesim){ if(!sb||!oturum||!cevrimici)return;
     const yeni={elemanlar:[],mesailer:[],avanslar:[],primler:[],aylik:[]};
     for(const t of TABLOLAR){ const {data,error}=await sb.from(t).select('*').order('id',{ascending:true}); if(error)throw error;
       for(const r of (data||[])){ if(!r.silindi) yeni[t].push(MAP[t][1](r)); } }        // tombstone'ları dışla
-    // GÜVENLİK: bulut boş dönerse dolu yereli EZME (veri kaybı önleme)
-    if((DB.elemanlar||[]).length>0 && (yeni.elemanlar||[]).length===0){
-      console.warn('bulut boş göründü; yerel korunuyor');
+    // GÜVENLİK: bulut boş dönerse dolu yereli EZME (veri kaybı önleme) — tüm tablolar
+    const _yerelTop=TABLOLAR.reduce(function(a,t){return a+((DB[t]||[]).length);},0);
+    const _yeniTop =TABLOLAR.reduce(function(a,t){return a+((yeni[t]||[]).length);},0);
+    if(_yerelTop>0 && ( _yeniTop===0 || ((DB.elemanlar||[]).length>0 && (yeni.elemanlar||[]).length===0) )){
+      console.warn('bulut boş/eksik göründü; yerel korunuyor');
       var _bd=document.getElementById('bulutDurum'); if(_bd){_bd.textContent='⚠️ bulut boş göründü — yerel veri korundu';_bd.style.color='#fde68a';}
       return;
     }
@@ -1097,6 +1105,52 @@ async function pasifDegistir(id,suAnPasif){
   try{ const {error}=await sb.from('profiller').update({pasif: !suAnPasif}).eq('id',id); if(error)throw error; renderKullanicilar(); }
   catch(e){ alert('Güncellenemedi: '+(e.message||e)); }
 }
+
+/* ================= SİLİNENLER (geri al) ================= */
+async function renderSilinenler(){
+  const app=document.getElementById('app');
+  if(!benAdmin){ app.innerHTML='<div class="card">Bu bölüm yalnızca yönetici içindir.</div>'; return; }
+  app.innerHTML='<div class="card">Yükleniyor…</div>';
+  try{
+    const {data:elAll}=await sb.from('elemanlar').select('id,ad');           // isim çözümü (silinmişler dahil)
+    const adMap={}; (elAll||[]).forEach(function(e){ adMap[e.id]=e.ad; });
+    const baslik={elemanlar:'Elemanlar',mesailer:'Mesai',avanslar:'Avans',primler:'Prim',aylik:'Aylık/Ödeme'};
+    const bloklar=[]; let toplam=0;
+    for(const t of TABLOLAR){
+      const {data,error}=await sb.from(t).select('*').eq('silindi',true).order('updated_at',{ascending:false});
+      if(error) throw error;
+      if(!data||!data.length) continue; toplam+=data.length;
+      const satirlar=data.map(function(r){
+        let ozet='';
+        if(t==='elemanlar') ozet='<b>'+esc(r.ad||'—')+'</b>'+(r.gorev?' · '+esc(r.gorev):'');
+        else { const kim=adMap[r.eleman_id]?esc(adMap[r.eleman_id]):'—';
+          if(t==='mesailer')      ozet=kim+' · '+(r.tarih||'')+' · mesai '+(r.mesai_dk||0)+'dk, yol '+(r.yol_dk||0)+'dk';
+          else if(t==='avanslar') ozet=kim+' · '+(r.tarih||'')+' · alınan '+(r.alinan||0)+' / verilen '+(r.verilen||0);
+          else if(t==='primler')  ozet=kim+' · '+(r.tarih||'')+' · prim '+(r.tutar||0);
+          else if(t==='aylik')    ozet=kim+' · '+(r.donem||'')+' · ödenen '+(r.odenen||0);
+        }
+        const gun=r.updated_at?(''+r.updated_at).slice(0,10):'';
+        return '<tr><td>'+ozet+'</td><td style="white-space:nowrap;color:var(--muted,#888)">'+gun+'</td>'+
+               '<td class="actions"><button class="iconbtn" title="Geri Al" onclick="silinenGeriAl(\''+t+'\',\''+r.id+'\',this)">↩️ Geri Al</button></td></tr>';
+      }).join('');
+      bloklar.push('<h3 style="margin:16px 0 6px">'+baslik[t]+' <span style="color:var(--muted,#888)">('+data.length+')</span></h3>'+
+                   '<div class="scroll"><table><tbody>'+satirlar+'</tbody></table></div>');
+    }
+    app.innerHTML='<div class="card"><h2 style="margin:0 0 6px">🗑️ Silinenler</h2>'+
+      '<div class="hint" style="margin-top:0">Yanlışlıkla silinen kayıtları buradan <b>tek tıkla geri alabilirsin</b>. (Silme işlemi veriyi yok etmez, sadece gizler.)</div>'+
+      (toplam?bloklar.join(''):'<div style="margin-top:14px;font-size:15px">✓ Silinmiş kayıt yok — her şey yerinde. 👍</div>')+
+      '</div>';
+  }catch(e){ app.innerHTML='<div class="card" style="color:var(--red)">Silinenler okunamadı: '+esc((e&&e.message)||(''+e))+'</div>'; }
+}
+async function silinenGeriAl(t,id,btn){
+  if(!benAdmin)return;
+  if(btn){ btn.disabled=true; btn.textContent='⏳'; }
+  try{ const {error}=await sb.from(t).update({silindi:false}).eq('id',id); if(error)throw error;
+    await bulutYukle(false);            // geri gelen kaydı yerele çek
+    renderSilinenler();
+  }catch(e){ alert('Geri alınamadı: '+((e&&e.message)||e)); if(btn){btn.disabled=false;btn.textContent='↩️ Geri Al';} }
+}
+
 async function baslat(){ yukle();
   try{ document.getElementById('surumEt').textContent='v'+APP_SURUM; }catch(e){}
   guncellemeKontrol(); setInterval(guncellemeKontrol, 15*60*1000); window.addEventListener('focus',guncellemeKontrol); // sürüm kontrolü
