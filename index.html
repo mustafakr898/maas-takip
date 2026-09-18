@@ -208,7 +208,7 @@
 
 <script>
 /* ================= Sürüm / Güncelleme ================= */
-const APP_SURUM="2026-09-11.5";   // her yayında bunu ve version.json'u birlikte artır
+const APP_SURUM="2026-09-18.1";   // her yayında bunu ve version.json'u birlikte artır
 function uygulamayiGuncelle(){ location.replace(location.pathname+'?v='+Date.now()); } // önbelleği atlayıp en yeni sürümü çeker
 async function guncellemeKontrol(){
   try{ const r=await fetch('version.json?t='+Date.now(),{cache:'no-store'}); if(!r.ok)return;
@@ -817,8 +817,14 @@ function renderBordro(){
 }
 
 /* ================= Yedek / Excel ================= */
-function disaAktar(){ const blob=new Blob([JSON.stringify(DB,null,2)],{type:"application/json"});
-  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="maas_takip_yedek_"+bugununTarihi()+".json";a.click(); }
+async function disaAktar(){ const json=JSON.stringify(DB,null,2); const adi="maas_takip_yedek_"+bugununTarihi()+".json";
+  if(window.showSaveFilePicker){                                   // masaüstü: konum sorar
+    try{ const h=await window.showSaveFilePicker({suggestedName:adi,types:[{description:'JSON yedek',accept:{'application/json':['.json']}}]});
+      const w=await h.createWritable(); await w.write(json); await w.close(); alert('✓ Yedek kaydedildi.'); return;
+    }catch(e){ if(e&&e.name==='AbortError')return; }               // kullanıcı iptal ettiyse çık
+  }
+  const blob=new Blob([json],{type:"application/json"});           // mobil/eski tarayıcı: normal indirme
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=adi;a.click(); }
 function iceAktar(ev){ if(!yazabilirMi())return; const f=ev.target.files[0];if(!f)return; const r=new FileReader();
   r.onload=()=>{try{const o=JSON.parse(r.result);
     if(!o.elemanlar)throw 0; if(!confirm("Mevcut veriler yedekle değiştirilecek. Devam?"))return;
