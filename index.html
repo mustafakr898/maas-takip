@@ -208,7 +208,7 @@
 
 <script>
 /* ================= Sürüm / Güncelleme ================= */
-const APP_SURUM="2026-09-18.1";   // her yayında bunu ve version.json'u birlikte artır
+const APP_SURUM="2026-09-18.2";   // her yayında bunu ve version.json'u birlikte artır
 function uygulamayiGuncelle(){ location.replace(location.pathname+'?v='+Date.now()); } // önbelleği atlayıp en yeni sürümü çeker
 async function guncellemeKontrol(){
   try{ const r=await fetch('version.json?t='+Date.now(),{cache:'no-store'}); if(!r.ok)return;
@@ -889,32 +889,52 @@ function degisenleriHesapla(){
   return {upserts,tombs,sayi};
 }
 // Sadece DEĞİŞEN satırları gönderir; silinenleri tombstone (silindi=true) olarak işaretler
-async function bulutGonder(){
+const TOMB_ESIK=5;                 // bir senkronda bundan fazla silme = güvenlik freni
+let _topluSilmeOnay=false;
+async function bulutGonder(etkilesim){
   if(!sb||!oturum||!cevrimici){ localStorage.setItem('maas_kirli','1'); return false; }
   const {upserts,tombs,sayi}=degisenleriHesapla();
-  if(!sayi){ localStorage.removeItem('maas_kirli'); sonSyncHata=''; durumGoster(); return true; }
+  if(!sayi){ localStorage.removeItem('maas_kirli'); sonSyncHata=''; _topluSilmeOnay=false; durumGoster(); return true; }
+  // GÜVENLİK FRENİ: bir senkronda çok sayıda silme genelde bozuk yerel durumdur → onaysız SİLME
+  let silSayi=0; for(const t of TABLOLAR) silSayi+=(tombs[t]||[]).length;
+  let silAtla=false;
+  if(silSayi>=TOMB_ESIK && !_topluSilmeOnay){
+    if(etkilesim && typeof confirm==='function' &&
+       confirm('⚠️ GÜVENLİK UYARISI\n\nBu işlem buluttan '+silSayi+' kaydı SİLECEK.\n\nBunu sen mi yaptın (toplu silme)? Emin değilsen İPTAL et — verilerin korunur.\n\nGerçekten silmek istiyorsan Tamam\'a bas.')){
+      _topluSilmeOnay=true;         // kullanıcı bilerek onayladı
+    } else {
+      silAtla=true;                 // silmeleri GÖNDERME; yalnız ekleme/güncellemeleri gönder
+    }
+  }
   let hata=false, ilkHata='';
-  for(const t of TABLOLAR){ const rows=(upserts[t]||[]).concat(tombs[t]||[]); if(!rows.length)continue;
+  for(const t of TABLOLAR){ const rows=(upserts[t]||[]).concat(silAtla?[]:(tombs[t]||[])); if(!rows.length)continue;
     try{ const {error}=await sb.from(t).upsert(rows); if(error){hata=true; if(!ilkHata)ilkHata='['+t+'] '+(error.message||error);} }
     catch(e){ hata=true; if(!ilkHata)ilkHata='['+t+'] '+(e&&e.message?e.message:String(e)); } }
   if(hata){ sonSyncHata=ilkHata; localStorage.setItem('maas_kirli','1'); durumGoster(); return false; }
-  bazGuncelle(); localStorage.removeItem('maas_kirli'); sonSyncHata=''; sonSenkronZ=saat(); durumGoster(); return true;
+  if(silAtla){ localStorage.setItem('maas_kirli','1'); sonSyncHata='⚠️ '+silSayi+' kayıt silinmeyi bekliyor — onaylamak için 🔄 butonuna bas'; durumGoster(); return false; }
+  bazGuncelle(); localStorage.removeItem('maas_kirli'); sonSyncHata=''; sonSenkronZ=saat(); _topluSilmeOnay=false; durumGoster(); return true;
 }
 function bulutGonderDebounce(){ if(!sb||!oturum)return; clearTimeout(gonderZ); gonderZ=setTimeout(bulutGonder,700); }
 function yerelDoluMu(){ return TABLOLAR.some(t=>(DB[t]||[]).length); }
 async function bulutDoluMu(){ try{ for(const t of TABLOLAR){ const {data}=await sb.from(t).select('id').eq('silindi',false).limit(1); if(data&&data.length)return true; } return false; }catch(e){ return true; } }
 function batchDoluMu(){ const b=document.getElementById('batch'); if(!b)return false; return [...b.querySelectorAll('input')].some(i=>i.type!=='checkbox'&&(i.value||'').trim()!==''); }
 
-async function bulutYukle(sessiz){ if(!sb||!oturum||!cevrimici)return;
+async function bulutYukle(sessiz,etkilesim){ if(!sb||!oturum||!cevrimici)return;
   try{
     // Önce yereldeki değişiklikleri gönder; gönderilemezse buluttan çekip YERELİ EZME (veri kaybı önlenir)
     if(localStorage.getItem('maas_base')!=null){
       const {sayi}=degisenleriHesapla();
-      if(sayi || localStorage.getItem('maas_kirli')){ const ok=await bulutGonder(); if(!ok){ durumGoster(); return; } }
+      if(sayi || localStorage.getItem('maas_kirli')){ const ok=await bulutGonder(etkilesim); if(!ok){ durumGoster(); return; } }
     }
     const yeni={elemanlar:[],mesailer:[],avanslar:[],primler:[],aylik:[]};
     for(const t of TABLOLAR){ const {data,error}=await sb.from(t).select('*').order('id',{ascending:true}); if(error)throw error;
       for(const r of (data||[])){ if(!r.silindi) yeni[t].push(MAP[t][1](r)); } }        // tombstone'ları dışla
+    // GÜVENLİK: bulut boş dönerse dolu yereli EZME (veri kaybı önleme)
+    if((DB.elemanlar||[]).length>0 && (yeni.elemanlar||[]).length===0){
+      console.warn('bulut boş göründü; yerel korunuyor');
+      var _bd=document.getElementById('bulutDurum'); if(_bd){_bd.textContent='⚠️ bulut boş göründü — yerel veri korundu';_bd.style.color='#fde68a';}
+      return;
+    }
     const eskiHash=JSON.stringify(DB), yeniHash=JSON.stringify(yeni);
     DB=yeni; localStorage.setItem(KEY,JSON.stringify(DB)); bazGuncelle(); sonSenkronZ=saat();
     if(yeniHash!==eskiHash && !(sessiz&&(yaziyorMu()||batchDoluMu()))) git(aktifTab());
@@ -961,7 +981,7 @@ async function sifremiUnuttum(){
     alert('✓ Şifren güncellendi. Artık «'+kadi.trim()+'» ve yeni şifrenle giriş yapabilirsin.');
   }catch(e){ alert('Sıfırlanamadı: '+(e.message||e)); }
 }
-async function elleSenkron(){ if(!sb||!oturum){alert('Önce giriş yap.');return;} const el=document.getElementById('bulutDurum'); if(el){el.textContent='⏳ senkronize ediliyor…';el.style.color='#e0f2fe';} await bulutYukle(false); durumGoster(); }
+async function elleSenkron(){ if(!sb||!oturum){alert('Önce giriş yap.');return;} const el=document.getElementById('bulutDurum'); if(el){el.textContent='⏳ senkronize ediliyor…';el.style.color='#e0f2fe';} await bulutYukle(false,true); durumGoster(); }
 async function cikisYap(){ if(!confirm('Çıkış yapılsın mı?'))return;
   try{ if(sb&&oturum&&cevrimici){ const el=document.getElementById('bulutDurum'); if(el)el.textContent='⏳ kaydediliyor…'; await bulutGonder(); } }catch(e){}  // çıkmadan önce bekleyenleri buluta gönder
   if(localStorage.getItem('maas_kirli') && !confirm('Bazı değişiklikler buluta gönderilemedi. Yine de çıkılsın mı? (Değişiklikler bu cihazda saklı kalır)')) { durumGoster(); return; }
